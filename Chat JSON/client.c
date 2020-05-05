@@ -47,14 +47,14 @@ void send_msg_handler() {
     json_object * jobj = json_object_new_object();
     json_object *jstring = json_object_new_string(message);
     json_object_object_add(jobj,"Json",jstring);
-	  //sprintf(buffer, "%s: %s\n", name, jstring);
-    send(sockfd, jstring, strlen(jstring), 0);
+	//sprintf(buffer, "%s: %s\n", name, jstring);
+    //send(sockfd, message, strlen(message), 0);
 
 
     if (strcmp(message, "exit") == 0) {
 			break;
     } else {
-      sprintf(buffer, "%s: %s\n", name, message);
+      sprintf(buffer, "%s: %s", name, message);
       send(sockfd, buffer, strlen(buffer), 0);
     }
 
