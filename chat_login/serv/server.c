@@ -12,9 +12,10 @@
 #include <time.h>
 #include <mysql/mysql.h>
 #include "task.c"
+#include <stdarg.h>
 
-#define PORT 3425
-#define IP "127.0.0.4"
+#define PORT 1155
+#define IP "127.5.8.49"
 #define true 1
 
 #define BUFFER_SZ 2048
@@ -28,7 +29,7 @@ static int uid=100;
 static char * host="localhost";
 static char * user="root";
 static char * password="Vladimir @ 1997";
-static char * dbname="chat_db";
+static char * dbname="chatroom_db";
 
 
 unsigned int port=3306;
@@ -38,6 +39,28 @@ unsigned int flag = 0;
 MYSQL * conn;
 MYSQL_RES * res;
 MYSQL_ROW row;
+
+void setSockopts(int *sock,int args_count,...  ){
+    //struct timeval timeout;
+    struct timeval timeout;
+    //timeout parameters
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+    int optval = 1;
+    va_list ap;
+    va_start(ap, args_count);
+    int i;
+    for(i=0;i<args_count;++i){
+         int arg = va_arg (ap, int);
+         if(arg==SO_RCVTIMEO || arg==SO_SNDTIMEO){
+             setsockopt (*sock, SOL_SOCKET, arg, (char *)&timeout,sizeof(timeout));
+         }
+         else if(arg==SO_REUSEADDR || arg==SO_REUSEPORT || arg==SO_KEEPALIVE){
+             setsockopt (*sock, SOL_SOCKET, arg, &optval, sizeof(optval));
+         }
+    }
+    va_end (ap);
+}
 
 void mysql_connect(){
 	conn = mysql_init(NULL);
@@ -62,8 +85,7 @@ client_t *clients[MAX_CLIENTS];
 
 pthread_mutex_t client_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void finish_with_error(MYSQL *con)
-{
+void finish_with_error(MYSQL *con){
   fprintf(stderr, "%s\n", mysql_error(con));
   mysql_close(con);
   exit(1);
@@ -74,7 +96,8 @@ void str_overwrite_stdout(){
 }
 int is_task(const char * task){
 
-		if(strstr(task,"+")!= NULL || strstr(task,"-")!=NULL || strstr(task,"*")!=NULL || strstr(task,"/")!=NULL)
+
+	if(strstr(task,"+")!= NULL || strstr(task,"-")!=NULL || strstr(task,"*")!=NULL || strstr(task,"/")!=NULL)
 		return 1;
 
 	return 0;
@@ -109,6 +132,7 @@ void queue_remove(int uid){
 }
 
 void ptint_ip_addr(struct sockaddr_in addr){
+
 	printf("%s",inet_ntoa(addr.sin_addr));
 
 }
@@ -140,12 +164,12 @@ void send_message(char *s,client_t *cli){
 }
 
 void * handle_client(void * arg){
-		char  *names[32];
-		int in=0;
+	char  *names[32];
+	int in=0;
     char buffer[BUFFER_SZ];
     char name[NAME_LEN_1];
-		char login[NAME_LEN_1];
-		char pass[NAME_LEN_1];
+	char login[NAME_LEN_1];
+	char pass[NAME_LEN_1];
     char recipientname[NAME_LEN_1];
     char buff[1024];
     int leave_flag=0;
@@ -325,7 +349,7 @@ void * handle_client(void * arg){
 		bzero(p1,10);
 
 
-			sprintf(buff,"Select count(*) from Expressions where User='%s' and Readed='%s'",cli->name,"No");
+			sprintf(buff,"Select count(*) from Expressions where User='%s' and Transmitted ='%s'",cli->name,"No");
 			if(mysql_query(conn,buff)){
 							finish_with_error(conn);
 			}
@@ -333,12 +357,13 @@ void * handle_client(void * arg){
 			int h1;
 			while(row=mysql_fetch_row(res)){
 							h1=atoi(row[0]);
+							printf("h1=%d\n",h1);
 							send(cli->sockfd,row[0],strlen(row[0]),0);
 			}
 			if(h1>0){
 				recv(cli->sockfd,p1,10,0);
 				if(atoi(p1)==1){
-					sprintf(buff,"Select Task,Result,RecipientName from Expressions where  User='%s' and Readed='%s'",cli->name,"No");
+					sprintf(buff,"Select Task,Result,RecipientName from Expressions where  User='%s' and Transmitted ='%s'",cli->name,"No");
 					if(mysql_query(conn,buff)){
 									finish_with_error(conn);
 					}
@@ -349,10 +374,11 @@ void * handle_client(void * arg){
 					while(row=mysql_fetch_row(res)){
 								  bzero(mm2,1024);
 									sprintf(mm2,"Task:%s,%s:%s",row[0],row[2],row[1]);
-									sprintf(buff,"Update Expressions  set Readed='%s' where task='%s' and User='%s'","Yes",row[0],cli->name);
+									sprintf(buff,"Update Expressions  set Readed ='%s' where task='%s' and User='%s'","Yes",row[0],cli->name);
 									if(mysql_query(conn,buff)){
 											finish_with_error(conn);
 										}
+
 									sleep(1);
 									send(cli->sockfd,mm2,strlen(mm2),0);
 					}
@@ -363,7 +389,7 @@ void * handle_client(void * arg){
 
 
 
-			sprintf(buff,"Select count(*) from Expressions where User='%s' and RecipientName='%s'",cli->recipientname,cli->name);
+			sprintf(buff,"Select count(*) from Expressions where RecipientName='%s' and Transmitted ='%s'",cli->name,"No");
 			if(mysql_query(conn,buff)){
 							finish_with_error(conn);
 			}
@@ -377,7 +403,7 @@ void * handle_client(void * arg){
 				recv(cli->sockfd,p1,10,0);
 				if(atoi(p1)==1){
 					  bzero(buffer,BUFFER_SZ);
-						strcpy(buffer,"Do I have a task?");
+						strcpy(buffer,"Server");
 				}
 			}
 
@@ -395,18 +421,9 @@ void * handle_client(void * arg){
         struct json_object *jserv_sec;
         struct json_object *jcli_sec;
         struct json_object *jobj;
-				if(strstr(buffer,"Do I have a task?")!=NULL){
-									sprintf(buff,"Select Online from Users Where Name='%s'",cli->recipientname);
-											if(mysql_query(conn,buff)){
-															finish_with_error(conn);
-											}
-											res=mysql_store_result(conn);
-											 char rp[32];
-											while(row=mysql_fetch_row(res)){
-															strcpy(rp,row[0]);
-											}
-
-													sprintf(buff,"Select Task from Expressions where User='%s' and RecipientName='%s' and Transmitted='%s'",cli->recipientname,cli->name,"No");
+        printf("buffer:%s\n",buffer);
+			if(strstr(buffer,"Server")!=NULL){
+													sprintf(buff,"Select Task, RecipientName from Expressions where RecipientName='%s' and Transmitted ='%s'",cli->name,"No");
 													if(mysql_query(conn,buff)){
 																	finish_with_error(conn);
 													}
@@ -414,16 +431,18 @@ void * handle_client(void * arg){
 													 char *rpp[10];
 													 int index=0;
 													while(row=mysql_fetch_row(res)){
+
 																	rpp[index++]=row[0];
 													}
 													for(int i=0;i<index;i++){
+
 															time_t currenttime;
 															time(&currenttime);
 															struct tm * mytime=localtime(&currenttime);
 															jserv_sec=json_object_new_int(mytime->tm_hour*3600+mytime->tm_min*60+mytime->tm_sec);
 															jobj=json_object_new_object();
 															jmessage=json_object_new_string(rpp[i]);
-															jname=json_object_new_string(cli->recipientname);
+															jname=json_object_new_string(cli->name);
 															json_object_object_add(jobj,"Name",jname);
 															json_object_object_add(jobj,"Message",jmessage);
 															json_object_object_add(jobj,"ServerSec",jserv_sec);
@@ -432,8 +451,9 @@ void * handle_client(void * arg){
 															for(int i=0;i<strlen(t_1);i++){
 																			s_buffer[i]=t_1[i];
 															}
+															printf("%s",s_buffer);
 															send(cli->sockfd,s_buffer,strlen(s_buffer),0);
-															sprintf(buff,"Update Expressions Set Transmitted='%s' Where User='%s' and Task='%s'","Yes",cli->recipientname,rpp[i]);
+															sprintf(buff,"Update Expressions Set Transmitted  ='%s' Where RecipientName ='%s' and Task='%s'","No",cli->recipientname,rpp[i]);
 															if(mysql_query(conn,buff)){
 																			finish_with_error(conn);
 															}
@@ -444,7 +464,7 @@ void * handle_client(void * arg){
 						continue;
 					}
 					int receive=recv(cli->sockfd,buffer,BUFFER_SZ,0);
-	        parser_json=json_tokener_parse(buffer);
+	        		parser_json=json_tokener_parse(buffer);
 
 					if(strstr(buffer,"menu") != NULL){
 						char p33[20];
@@ -527,7 +547,7 @@ void * handle_client(void * arg){
 															}
 														}
                     }else{
-                        jmessage=json_object_new_string("Wrong resolt!");
+                        jmessage=json_object_new_string("Wrong result!");
                         jname=json_object_new_string("Server");
                         jobj=json_object_new_object();
                         json_object_object_add(jobj,"Name",jname);
@@ -535,14 +555,14 @@ void * handle_client(void * arg){
                         json_object_object_add(jobj,"ServerSec",jserv_sec);
                         sprintf(buffer,"%s\n",json_object_get_string(jobj));
                         send(cli->sockfd,buffer,sizeof(buffer),0);
-                    }
-                }else{
-                  char buff[2048];
-                    char res_1[1024];
-										int r=stringConvertToArithmeticOperations(ptr);
-										sprintf(res_1,"%d",r);
+                    	}
+                	}else{
+                  		char buff[2048];
+                    	char res_1[1024];
+						int r=stringConvertToArithmeticOperations(ptr);
+						sprintf(res_1,"%d",r);
 
-                      sprintf(buff,"Select Online from Users Where Name='%s'",cli->recipientname);
+                      	sprintf(buff,"Select Online from Users Where Name='%s'",cli->recipientname);
                         if(mysql_query(conn,buff)){
                             finish_with_error(conn);
                         }
@@ -559,7 +579,7 @@ void * handle_client(void * arg){
                             jobj=json_object_new_object();
                             json_object_object_get_ex(parser_json,"Message",&jmessage);
                             json_object_object_get_ex(parser_json,"Task",&jtask);
-														jname=json_object_new_string(cli->name);
+							jname=json_object_new_string(cli->name);
                             json_object_object_add(jobj,"Name",jname);
                             json_object_object_add(jobj,"Message",jmessage);
                             json_object_object_add(jobj,"ServerSec",jserv_sec);
@@ -610,16 +630,14 @@ int main(){
 	listenfd=socket(AF_INET,SOCK_STREAM,0);
 	in_err(listenfd,"Error:socket!");
 
-	const int opt = 1;
-  setsockopt(listenfd, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt));
-  setsockopt(listenfd, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt));
+	setSockopts(&listenfd,3,SO_REUSEPORT,SO_REUSEADDR,SO_KEEPALIVE);
 
 	serv_addr.sin_family=AF_INET;
 	serv_addr.sin_port=htons(PORT);
 	serv_addr.sin_addr.s_addr=inet_addr(IP);
 
 	int bind_res;
-	bind_res=bind(listenfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr));
+	bind_res = bind(listenfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr));
 	in_err(bind_res,"Error:bind! ");
 
 	in_err(listen(listenfd,10),"Error:listen");

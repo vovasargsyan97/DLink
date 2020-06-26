@@ -11,9 +11,10 @@
 #include <stdio.h>
 #include <signal.h>
 #include <time.h>
+#include <stdarg.h>
 
-#define PORT 3425
-#define IP "127.0.0.4"
+#define PORT 1155
+#define IP "127.5.8.49"
 #define true 1
 
 #define BUFFER_SZ 2048
@@ -25,6 +26,7 @@ volatile sig_atomic_t last_message = 1;
 volatile sig_atomic_t  tt = 0;
 int serv_time=-1;
 int sockfd=0;
+int socketfd=0;
 char name[NAME_LEN_1];
 char login[NAME_LEN_1];
 char password[NAME_LEN_1];
@@ -33,11 +35,33 @@ char last_task[TASK_LEN];
 char * names[100];
 int in=0;
 
+void setSockopts(int *sock,int args_count,...  ){
+    //struct timeval timeout;
+    struct timeval timeout;
+    //timeout parameters
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+    int optval = 1;
+    va_list ap;
+    va_start(ap, args_count);
+    int i;
+    for(i=0;i<args_count;++i){
+         int arg = va_arg (ap, int);
+         if(arg==SO_RCVTIMEO || arg==SO_SNDTIMEO){
+             setsockopt (*sock, SOL_SOCKET, arg, (char *)&timeout,sizeof(timeout));
+         }
+         else if(arg==SO_REUSEADDR || arg==SO_REUSEPORT || arg==SO_KEEPALIVE){
+             setsockopt (*sock, SOL_SOCKET, arg, &optval, sizeof(optval));
+         }
+    }
+    va_end (ap);
+}
+
 void str_overwrite_stdout(){
 	if(last_message==1){
 		printf("\r%s","Enter the expression: ");
 	}else if(last_message==0){
-		printf("\r%s","Enter result: " );
+		printf("\r%s","Enter the expression: ");
 		last_message = -1;
 		goto p;
 	}else{
@@ -60,7 +84,7 @@ int is_task(const char * task){
 		if(strstr(task,"+")!= NULL || strstr(task,"-")!=NULL || strstr(task,"*")!=NULL || strstr(task,"/")!=NULL)
 		return 1;
 
-	return 0;
+		return 0;
 }
 void in_err(int n,char * message){
 	if(n<0){
@@ -69,6 +93,7 @@ void in_err(int n,char * message){
 	}
 }
 void catch_ctrl_c_and_exit(){
+
 	flag=1;
 }
 void  send_msg_handler(){
@@ -213,12 +238,14 @@ int main(int argc,char ** argv){
 	sockfd=socket(AF_INET,SOCK_STREAM,0);
 	in_err(sockfd,"Error:socket!");
 
+	setSockopts(&sockfd,2,SO_RCVTIMEO,SO_SNDTIMEO);
+
 	server_addr.sin_family=AF_INET;
 	server_addr.sin_port=htons(PORT);
 	server_addr.sin_addr.s_addr=inet_addr(IP);
 
 	//connect to server
-  int err=connect(sockfd,(struct sockaddr *)&server_addr,sizeof(server_addr));
+    int err=connect(sockfd,(struct sockaddr *)&server_addr,sizeof(server_addr));
 	in_err(err,"Error : connect!");
 
 	char b[10];
@@ -341,7 +368,7 @@ int main(int argc,char ** argv){
 	bzero(p1,20);
 	recv(sockfd,p1,20,0);
 	if(atoi(p1)>0){
-		printf("You have %s unread message!\n",p1 );
+		printf("You have %s unread Message!\n",p1 );
 		printf("Read?\n");
 		printf("Yes-->1\nNo-->2\n" );
 		printf(">");
